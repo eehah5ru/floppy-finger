@@ -5,9 +5,21 @@ boolean firstRun = true; // Used for one-run-only stuffs;
 const byte STEP_CONTROL_PIN = 2;
 const byte DIRECTION_PIN = 3;
 
+const byte BUTTON_PRESS_FINGER_PIN = 4;
+const byte BUTTON_RELEASE_FINGER_PIN = 5;
+const byte BUTTON_PRESS_AND_RELEASE_FINGER_PIN = 6;
+
+
+// serial commands
+const int CMD_NOTHING = -1;
+const int CMD_PRESS_FINGER = 100;
+const int CMD_RELEASE_FINGER = 101;
+const int CMD_PRESS_AND_RELEASE_FINGER = 102;
+
+
 #define RESOLUTION 80 //Microsecond resolution for notes
 
-const byte MAX_POSITION = 158;
+const byte MAX_POSITION = 180;
 
 byte currentPosition = 0;
 
@@ -24,6 +36,11 @@ void setup() {
   pinMode(13, OUTPUT);// Pin 13 has an LED connected on most Arduino boards
   pinMode(STEP_CONTROL_PIN, OUTPUT); // Step control 1
   pinMode(DIRECTION_PIN, OUTPUT); // Direction 1
+  
+  pinMode(BUTTON_PRESS_FINGER_PIN, INPUT); // "press finger" button pin
+  pinMode(BUTTON_RELEASE_FINGER_PIN, INPUT); // "release finger" button pin
+  pinMode(BUTTON_PRESS_AND_RELEASE_FINGER_PIN, INPUT); // "press and release finger" button pin
+
 
 //  Timer1.initialize(RESOLUTION); // Set up a timer at the defined resolution
 //  Timer1.attachInterrupt(tick); // Attach the tick function
@@ -32,22 +49,21 @@ void setup() {
 }
 
 
-void pressWithFinger () {
+void pressAndReleaseFinger () {
 
-  goForward();
+  pressFinger();
   blinkLED();  
     
-  goBackward();
+  releaseFinger();
   blinkLED();  
 }
 
-
-void goForward () {
+void pressFinger () {
   digitalWrite(DIRECTION_PIN, LOW);
   doGo(1);  
 }
 
-void goBackward () {
+void releaseFinger () {
   digitalWrite(DIRECTION_PIN, HIGH);
   doGo(-1);    
 }
@@ -56,7 +72,8 @@ void doGo (const byte delta) {
   
   for (; currentPosition >= 0 && currentPosition <= MAX_POSITION; currentPosition += delta) {
     digitalWrite(STEP_CONTROL_PIN, currentState);
-    Serial.println(currentPosition);
+    delay(4);
+//    Serial.println(currentPosition);
     currentState = ~currentState;
   }
   currentPosition -= delta;
@@ -83,6 +100,35 @@ void doGo (const byte delta) {
 //  }
 }
 
+void checkSerialCmdAndDo (const int fromSerial, const int command, void (*callback)()) {
+  if (fromSerial == CMD_NOTHING) {
+    return;
+  }
+  
+  if (fromSerial == command) {
+    callback();
+  }
+}
+
+int getFromSerial () {
+   if (Serial.available() <= 0) {
+     return CMD_NOTHING;
+   }
+   
+  int fromSerial = Serial.read();
+  
+  Serial.println(fromSerial);
+
+  return fromSerial;  
+}
+
+void checkButtonAndDo (const byte pinNumber, void (*callback)()) {
+  int buttonState = digitalRead(pinNumber);
+  
+  if (buttonState == HIGH) {
+    callback();
+  }
+}
 
 void loop() {  
   //The first loop, reset all the drives, and wait 2 seconds...
@@ -101,8 +147,23 @@ void loop() {
     firstRun = false;    
   }
   
-  pressWithFinger();
+  int fromSerial = getFromSerial();
+  
+  // press finger 
+  checkButtonAndDo(BUTTON_PRESS_FINGER_PIN, &pressFinger);
+  checkSerialCmdAndDo(fromSerial, CMD_PRESS_FINGER, &pressFinger);
+  
+  // release finger 
+  checkButtonAndDo(BUTTON_RELEASE_FINGER_PIN, &releaseFinger);  
+  checkSerialCmdAndDo(fromSerial, CMD_RELEASE_FINGER, &releaseFinger);  
+  
+  // press and release finger 
+  checkButtonAndDo(BUTTON_PRESS_AND_RELEASE_FINGER_PIN, &pressAndReleaseFinger);    
+  checkSerialCmdAndDo(fromSerial, CMD_PRESS_AND_RELEASE_FINGER, &pressAndReleaseFinger);    
+
 }
+
+
 
 void tick () {
   if (firstRun) {
